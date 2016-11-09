@@ -58,9 +58,22 @@ class StreamingService(metrics: MetricRegistry) {
       .flatMap(_.solar_system_name)
   }
 
+  case class AllianceInfo(id: Int, ticker: String, name: String)
+
+  val getAllianceName = scalaz.Memo.mutableHashMapMemo { (id: Int) =>
+    metric_sys.mark()
+    esi.alliance.getAlliancesAllianceId(id)
+      .attemptRun
+      .toOption
+      .map(_.toOption)
+      .flatten
+      .map(x => AllianceInfo(id, x.ticker, x.alliance_name))
+  }
+
   case class SystemNameAndSovCampaign(
       solar_system_name: Option[String],
-      event: eveapi.esi.model.Get_sovereignty_campaigns_200_ok_object)
+      event: eveapi.esi.model.Get_sovereignty_campaigns_200_ok_object,
+      alliance: Option[AllianceInfo])
 
   val topic: Topic[List[SystemNameAndSovCampaign]] =
     scalaz.stream.async.topic[List[SystemNameAndSovCampaign]]({
@@ -75,15 +88,23 @@ class StreamingService(metrics: MetricRegistry) {
                 _.map {
                   res =>
                     val systems = res.map(_.solar_system_id).toSet
+                    val alliances = res.flatMap(_.defender_id)
+                    val allianceLookups = alliances.map{ id =>
+                      Task { getAllianceName(id.toInt) }
+                    }
                     val systemLookups = systems.map { id =>
                       Task { (id, getSystemName(id.toInt)) }
                     }.toList
                     val systemResults =
                       Task.gatherUnordered(systemLookups).run.toMap
+                    val allianceResults =
+                      Task.gatherUnordered(allianceLookups).attemptRun.toOption.toList.flatten.flatten
                     res.map { event =>
                       SystemNameAndSovCampaign(
                         systemResults.get(event.solar_system_id).flatten,
-                        event)
+                        event,
+                        allianceResults.find(a => event.defender_id.contains(a.id.toInt))
+                      )
                     }
                 }
               }

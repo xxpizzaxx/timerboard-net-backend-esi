@@ -3,6 +3,7 @@ import java.util.concurrent.{Executors, ScheduledExecutorService}
 import org.http4s.rho.RhoService
 import org.http4s._
 import eveapi.esi.client.EsiClient
+import eveapi.esi.client.EsiClient._
 import _root_.argonaut._
 import Argonaut._
 import ArgonautShapeless._
@@ -49,8 +50,8 @@ class StreamingService(metrics: MetricRegistry) {
 
   val getSystemName = scalaz.Memo.mutableHashMapMemo { (id: Int) =>
     metric_sys.mark()
-    esi.universe
-      .getUniverseSystemsSystemId(id)
+    EsiClient.universe.getUniverseSystemsSystemId(id)
+      .run(esi)
       .attemptRun
       .toOption
       .map(_.toOption)
@@ -62,7 +63,8 @@ class StreamingService(metrics: MetricRegistry) {
 
   val getAllianceName = scalaz.Memo.mutableHashMapMemo { (id: Int) =>
     metric_sys.mark()
-    esi.alliance.getAlliancesAllianceId(id)
+    EsiClient.alliance.getAlliancesAllianceId(id)
+      .run(esi)
       .attemptRun
       .toOption
       .map(_.toOption)
@@ -72,7 +74,7 @@ class StreamingService(metrics: MetricRegistry) {
 
   case class SystemNameAndSovCampaign(
       solar_system_name: Option[String],
-      event: eveapi.esi.model.Get_sovereignty_campaigns_200_ok_object,
+      event: eveapi.esi.model.Get_sovereignty_campaigns_200_ok,
       alliance: Option[AllianceInfo])
 
   val topic: Topic[List[SystemNameAndSovCampaign]] =
@@ -82,8 +84,9 @@ class StreamingService(metrics: MetricRegistry) {
         .map {
           _ =>
             metric_sov.mark()
-            esi.sovereignty
+            EsiClient.sovereignty
               .getSovereigntyCampaigns()
+              .run(esi)
               .map {
                 _.map {
                   res =>

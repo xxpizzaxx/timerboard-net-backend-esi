@@ -44,7 +44,7 @@ class StreamingService(metrics: MetricRegistry) {
   val metric_initial = metrics.meter("initial")
   val metric_diff = metrics.meter("diff")
 
-  val esi = new EsiClient()
+  val esi = new EsiClient("timerboard-net-backend-esi")
 
   // TODO replace all the disjunction flattening with validations
 

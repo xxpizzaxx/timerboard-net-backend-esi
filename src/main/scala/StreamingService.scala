@@ -2,8 +2,8 @@ import java.util.concurrent.{Executors, ScheduledExecutorService}
 
 import org.http4s.rho.RhoService
 import org.http4s._
-import eveapi.esi.client.EsiClient
-import eveapi.esi.client.EsiClient._
+import eveapi.esi.client._
+import EsiClient._
 import _root_.argonaut._
 import Argonaut._
 import ArgonautShapeless._
@@ -44,7 +44,7 @@ class StreamingService(metrics: MetricRegistry) {
   val metric_initial = metrics.meter("initial")
   val metric_diff = metrics.meter("diff")
 
-  val esi = new EsiClient("timerboard-net-backend-esi")
+  val esi = new MetricsEsiClient("", metrics, "timerboard-net-backend-esi")
 
   // TODO replace all the disjunction flattening with validations
 

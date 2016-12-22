@@ -44,6 +44,9 @@ object KleisliMemo {
       concurrentKleisliMemo(mm).apply(k)
   }
 
+}
+
+object KleisliCache {
   // and with TTLs
 
   import scala.concurrent.duration.FiniteDuration
@@ -87,7 +90,8 @@ object KleisliMemo {
     })
   }
 
-  implicit class CacheableKleiski[M[_], K, V](k: Kleisli[M, K, ResultWithExpiry[V]]) {
+  implicit class CacheableKleiski[M[_], K, V](
+      k: Kleisli[M, K, ResultWithExpiry[V]]) {
     def concurrentlyCache(implicit mm: Monad[M]) =
       concurrentKleisliCache(mm).apply(k)
   }

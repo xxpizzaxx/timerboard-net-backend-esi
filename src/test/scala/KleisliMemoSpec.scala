@@ -92,7 +92,7 @@ class KleisliMemoSpec extends FlatSpec with MustMatchers {
   "caching a task which can fail" should "cache it during the time period stated" in {
     import scalaz._
     import scala.concurrent.duration._
-    import KleisliMemo._
+    import KleisliCache._
 
     var counters = new TrieMap[Int, AtomicInteger]()
 

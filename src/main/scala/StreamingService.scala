@@ -48,29 +48,23 @@ class StreamingService(metrics: MetricRegistry) {
 
   // TODO replace all the disjunction flattening with validations
 
-  val getSystemName = scalaz.Memo.mutableHashMapMemo { (id: Int) =>
+  import KleisliMemo._
+
+  val getSystemName = Kleisli[Task, Int, Option[String]] { (id: Int) =>
     metric_sys.mark()
     EsiClient.universe.getUniverseSystemsSystemId(id)
       .run(esi)
-      .attemptRun
-      .toOption
-      .map(_.toOption)
-      .flatten
-      .flatMap(_.solar_system_name)
-  }
+      .map { _.toOption.flatMap{_.solar_system_name} }
+  }.concurrentlyMemoize
 
   case class AllianceInfo(id: Int, ticker: String, name: String)
 
-  val getAllianceName = scalaz.Memo.mutableHashMapMemo { (id: Int) =>
+  val getAllianceName = Kleisli[Task, Int, Option[AllianceInfo]] { (id: Int) =>
     metric_sys.mark()
     EsiClient.alliance.getAlliancesAllianceId(id)
       .run(esi)
-      .attemptRun
-      .toOption
-      .map(_.toOption)
-      .flatten
-      .map(x => AllianceInfo(id, x.ticker, x.alliance_name))
-  }
+      .map { _.toOption.map(x => AllianceInfo(id, x.ticker, x.alliance_name)) }
+  }.concurrentlyMemoize
 
   case class SystemNameAndSovCampaign(
       solar_system_name: Option[String],
@@ -93,10 +87,10 @@ class StreamingService(metrics: MetricRegistry) {
                     val systems = res.map(_.solar_system_id).toSet
                     val alliances = res.flatMap(_.defender_id)
                     val allianceLookups = alliances.map{ id =>
-                      Task { getAllianceName(id.toInt) }
+                      getAllianceName(id.toInt)
                     }
                     val systemLookups = systems.map { id =>
-                      Task { (id, getSystemName(id.toInt)) }
+                      getSystemName(id.toInt).map{x => (id, x)}
                     }.toList
                     val systemResults =
                       Task.gatherUnordered(systemLookups).run.toMap

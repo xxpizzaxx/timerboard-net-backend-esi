@@ -43,7 +43,9 @@ libraryDependencies ++= Seq(
   "io.circe"                         %% "circe-generic"             % "0.4.1",
   // logging
   "ch.qos.logback"                   % "logback-classic"            % "1.1.7",
-  "ch.qos.logback"                   % "logback-core"               % "1.1.7"
+  "ch.qos.logback"                   % "logback-core"               % "1.1.7",
+  // an expiring map for caches
+  "net.jodah"                        % "expiringmap"                % "0.5.7"
 )
 
 // test frameworks and tools

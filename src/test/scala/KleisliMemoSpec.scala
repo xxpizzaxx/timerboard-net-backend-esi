@@ -89,4 +89,30 @@ class KleisliMemoSpec extends FlatSpec with MustMatchers {
     map must equal(expectedmap)
   }
 
+  "caching a task which can fail" should "cache it during the time period stated" in {
+    import scalaz._
+    import scala.concurrent.duration._
+    import KleisliMemo._
+
+    var counters = new TrieMap[Int, AtomicInteger]()
+
+    val cached = Kleisli[Task, Int, ResultWithExpiry[Int]] { (input: Int) =>
+      Task[ResultWithExpiry[Int]] {
+        val c = counters.getOrElseUpdate(input, new AtomicInteger(0))
+        val value = c.incrementAndGet()
+        (value, 2 seconds)
+      }
+    }.concurrentlyCache
+
+    cached(0).attempt.run.toOption.get must equal(1)
+    cached(0).attempt.run.toOption.get must equal(1)
+    cached(0).attempt.run.toOption.get must equal(1)
+
+    Thread.sleep(3000)
+
+    cached(0).attempt.run.toOption.get must equal(2)
+
+    counters.get(0).get.get must equal(2)
+  }
+
 }

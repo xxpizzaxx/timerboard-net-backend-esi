@@ -93,7 +93,7 @@ class StreamingService(metrics: MetricRegistry) {
                       getSystemName(id.toInt).map{x => (id, x)}
                     }.toList
                     val systemResults =
-                      Task.gatherUnordered(systemLookups).run.toMap
+                      Task.gatherUnordered(systemLookups).attemptRun.toList.flatten.toMap
                     val allianceResults =
                       Task.gatherUnordered(allianceLookups).attemptRun.toOption.toList.flatten.flatten
                     res.map { event =>

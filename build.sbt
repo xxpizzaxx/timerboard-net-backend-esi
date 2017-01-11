@@ -38,7 +38,7 @@ libraryDependencies ++= Seq(
   "io.dropwizard.metrics"            % "metrics-core"               % "3.1.2",
   "io.dropwizard.metrics"            % "metrics-graphite"           % "3.1.2",
   // ESI client
-  "eveapi"                           %% "esi-client"                % "1.125.0",
+  "eveapi"                           %% "esi-client"                % "1.199.0",
   // circe generic
   "io.circe"                         %% "circe-generic"             % "0.4.1",
   // logging

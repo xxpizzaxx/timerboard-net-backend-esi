@@ -3,6 +3,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 import org.http4s._
+import org.http4s.client.blaze.PooledHttp1Client
 import org.http4s.server.HttpMiddleware
 import org.http4s.util.CaseInsensitiveString
 

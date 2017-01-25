@@ -11,7 +11,7 @@ resolvers += "pizza repo" at "http://dev.pizza.moe/repository/pizza/"
 fork := true
 parallelExecution in Test := false
 
-val HTTP4S_VERSION = "0.15.0a"
+val HTTP4S_VERSION = "0.15.3a"
 val RHO_VERSION = "0.13.1"
 
 // main dependencies
@@ -38,7 +38,7 @@ libraryDependencies ++= Seq(
   "io.dropwizard.metrics"            % "metrics-core"               % "3.1.2",
   "io.dropwizard.metrics"            % "metrics-graphite"           % "3.1.2",
   // ESI client
-  "eveapi"                           %% "esi-client"                % "1.125.0",
+  "eveapi"                           %% "esi-client"                % "1.226.0",
   // circe generic
   "io.circe"                         %% "circe-generic"             % "0.4.1",
   // logging

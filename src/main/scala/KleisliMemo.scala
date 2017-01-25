@@ -82,7 +82,9 @@ object KleisliCache {
         Option(m.get(k)).map(a => mm.point(a)).getOrElse {
           val saver = Kleisli { (r: ResultWithExpiry[V]) =>
             val (v, d) = r
-            m.put(k, v, d.length, d.unit)
+            if (!m.containsKey(k)) { // only put it in the cache if we've not got one in there
+              m.put(k, v, d.length, d.unit)
+            }
             mm.point(v)
           }
           (f >=> saver).run(k)

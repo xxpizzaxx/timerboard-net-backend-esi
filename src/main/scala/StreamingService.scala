@@ -2,12 +2,13 @@ import java.util.concurrent.{Executors, ScheduledExecutorService}
 
 import org.http4s.rho.RhoService
 import org.http4s._
+import org.http4s.client.blaze.PooledHttp1Client
 import eveapi.esi.client._
 import EsiClient._
 import _root_.argonaut._
 import Argonaut._
 import ArgonautShapeless._
-import argonautCodecs.ArgonautCodecs._
+import eveapi.esi.api.ArgonautCodecs._
 import com.codahale.metrics.MetricRegistry
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.flipkart.zjsonpatch.JsonDiff
@@ -44,7 +45,9 @@ class StreamingService(metrics: MetricRegistry) {
   val metric_initial = metrics.meter("initial")
   val metric_diff = metrics.meter("diff")
 
-  val esi = new MetricsEsiClient("", metrics, "timerboard-net-backend-esi")
+  val client = PooledHttp1Client.apply()
+
+  val esi = new MetricsEsiClient("", metrics, "timerboard-net-backend-esi", client.toHttpService)
 
   // TODO replace all the disjunction flattening with validations
 

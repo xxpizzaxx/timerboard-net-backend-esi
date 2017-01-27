@@ -59,35 +59,29 @@ object KleisliCache {
       override def apply(z: Kleisli[M, K, ResultWithExpiry[V]]): Kleisli[M, K, V] = f(z)
     }
 
-  def concurrentKleisliCache[M[_], K, V](implicit mm: Monad[M]): KleisliCache[M, K, V] = {
-    concurrentKleisliCache[M, K, V]()
-  }
-
-  def concurrentKleisliCache[M[_], K, V](
-      m: ExpiringMap[K, V] = ExpiringMap
-        .builder()
-        .variableExpiration()
-        .expirationPolicy(ExpirationPolicy.CREATED)
-        .build()
-        .asInstanceOf[ExpiringMap[K, V]])(implicit mm: Monad[M]): KleisliCache[M, K, V] = {
+  def concurrentKleisliCache[C[_, _], M[_], K, V]()(implicit cf: CacheFactory[C],
+                                                    mm: Monad[M]): KleisliCache[M, K, V] = {
+    val m = cf.create[K, V]()
     kcache[M, K, V](f =>
       Kleisli { (k: K) =>
-        Option(m.get(k)).map(a => mm.point(a)).getOrElse {
-          val saver = Kleisli { (r: ResultWithExpiry[V]) =>
-            val (v, d) = r
-            if (!m.containsKey(k)) { // only put it in the cache if we've not got one in there
-              m.put(k, v, d.length, d.unit)
+        m.get(k)
+          .map(a => mm.point(a))
+          .getOrElse {
+            val saver = Kleisli { (r: ResultWithExpiry[V]) =>
+              val (v, d) = r
+              if (m.get(k).isEmpty) { // only put it in the cache if we've not got one in there
+                m.put(k, v, d)
+              }
+              mm.point(v)
             }
-            mm.point(v)
+            (f >=> saver).run(k)
           }
-          (f >=> saver).run(k)
-        }
     })
   }
 
   implicit class CacheableKleiski[M[_], K, V](k: Kleisli[M, K, ResultWithExpiry[V]]) {
-    def concurrentlyCache(implicit mm: Monad[M]) =
-      concurrentKleisliCache(mm).apply(k)
+    def concurrentlyCacheWithExpiringMap(implicit mm: Monad[M]) =
+      concurrentKleisliCache[ExpiringMap, M, K, V]().apply(k)
   }
 
 }

@@ -39,7 +39,7 @@ object Middleware {
       val cached = v1.map { r =>
         val body = r.body.runLog.unsafePerformSync
         ((r, body), getCacheDuration(r))
-      }.concurrentlyCache
+      }.concurrentlyCacheWithExpiringMap
       HttpService {
         case r if methods.contains(r.method) =>
           cached(r).map {

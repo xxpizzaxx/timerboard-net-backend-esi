@@ -20,7 +20,6 @@ import io.circe.syntax._
 import scalaz._
 import Scalaz._
 import scalaz.concurrent.{Strategy, Task}
-import spray.caching.{Cache, LruCache}
 
 import scalaz.stream.{time, Exchange, Process}
 import scalaz.stream.async.topic

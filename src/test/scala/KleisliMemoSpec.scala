@@ -1,5 +1,6 @@
 import java.util.concurrent.atomic.AtomicInteger
 
+import net.jodah.expiringmap.ExpiringMap
 import org.scalatest.{FlatSpec, MustMatchers}
 
 import scala.collection.concurrent.TrieMap
@@ -101,7 +102,7 @@ class KleisliMemoSpec extends FlatSpec with MustMatchers {
         val value = c.incrementAndGet()
         (value, 2 seconds)
       }
-    }.concurrentlyCache
+    }.concurrentlyCacheWithExpiringMap
 
     cached(0).attempt.run.toOption.get must equal(1)
     cached(0).attempt.run.toOption.get must equal(1)

@@ -61,7 +61,6 @@ class KleisliMemoSpec extends FlatSpec with MustMatchers {
     counter must equal(2)
   }
 
-
   "memoizing a task which can fail" should "only save the successful attempts" in {
     import scalaz._
 
@@ -69,14 +68,14 @@ class KleisliMemoSpec extends FlatSpec with MustMatchers {
 
     val func = Kleisli[Task, Int, Int] { (input: Int) =>
       Task[Int] {
-        val c = counters.getOrElseUpdate(input, new AtomicInteger(0))
+        val c     = counters.getOrElseUpdate(input, new AtomicInteger(0))
         val value = c.incrementAndGet()
         assert(value == 2)
         value
       }
     }
 
-    val map = new TrieMap[Int, Int]()
+    val map      = new TrieMap[Int, Int]()
     val memoized = KleisliMemo.concurrentKleisliMemo[Task, Int, Int](map).apply(func)
 
     memoized(0).attempt.run.isLeft must equal(true)
@@ -98,7 +97,7 @@ class KleisliMemoSpec extends FlatSpec with MustMatchers {
 
     val cached = Kleisli[Task, Int, ResultWithExpiry[Int]] { (input: Int) =>
       Task[ResultWithExpiry[Int]] {
-        val c = counters.getOrElseUpdate(input, new AtomicInteger(0))
+        val c     = counters.getOrElseUpdate(input, new AtomicInteger(0))
         val value = c.incrementAndGet()
         (value, 2 seconds)
       }

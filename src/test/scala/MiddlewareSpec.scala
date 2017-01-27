@@ -79,13 +79,12 @@ class MiddlewareSpec extends FlatSpec with MustMatchers {
       case _ =>
         hits.incrementAndGet()
         Ok("body").map { r =>
-          val now = OffsetDateTime.now()
+          val now        = OffsetDateTime.now()
           val in5seconds = now.plusSeconds(5)
           val headers = Headers(
             List(
               Header("date", DateTimeFormatter.RFC_1123_DATE_TIME.format(now)),
-              Header("expires",
-                     DateTimeFormatter.RFC_1123_DATE_TIME.format(in5seconds))
+              Header("expires", DateTimeFormatter.RFC_1123_DATE_TIME.format(in5seconds))
             ))
           r.copy(headers = headers)
         }
@@ -93,7 +92,7 @@ class MiddlewareSpec extends FlatSpec with MustMatchers {
     val cachedService =
       Middleware.cacheMiddleware(methods = List(Method.GET))(service)
     val req = new Request(method = Method.GET, uri = Uri.uri("/path"))
-    val r1 = cachedService.run(req).run.headers
+    val r1  = cachedService.run(req).run.headers
     hits.get() must equal(1)
     cachedService.run(req).run.headers must equal(r1)
     cachedService.run(req).run.headers must equal(r1)

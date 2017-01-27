@@ -19,22 +19,35 @@ object Main {
   val parser = new OptionParser[Config]("timerboard") {
     head("timerboard backend")
 
-    opt[String]("host").action { (x, c) =>
-      c.copy(host = x)
-    }.optional().text("defaults to localhost")
-    opt[Int]("port").action { (x, c) =>
-      c.copy(port = x)
-    }.optional().text("defaults to 8090")
-    opt[Boolean]("console_metrics").action { (x, c) =>
-      c.copy(consoleMetrics = x)
-    }.optional().text("dump metrics to the console, defaults off")
-    opt[String]("graphite").action { (x, c) =>
-      c.copy(graphite = Some(x))
-    }.optional()
+    opt[String]("host")
+      .action { (x, c) =>
+        c.copy(host = x)
+      }
+      .optional()
+      .text("defaults to localhost")
+    opt[Int]("port")
+      .action { (x, c) =>
+        c.copy(port = x)
+      }
+      .optional()
+      .text("defaults to 8090")
+    opt[Boolean]("console_metrics")
+      .action { (x, c) =>
+        c.copy(consoleMetrics = x)
+      }
+      .optional()
+      .text("dump metrics to the console, defaults off")
+    opt[String]("graphite")
+      .action { (x, c) =>
+        c.copy(graphite = Some(x))
+      }
+      .optional()
       .text("address to the graphite server, sends metrics if enabled")
-    opt[String]("graphite_prefix").action { (x, c) =>
-      c.copy(graphitePrefix = x)
-    }.optional()
+    opt[String]("graphite_prefix")
+      .action { (x, c) =>
+        c.copy(graphitePrefix = x)
+      }
+      .optional()
       .text("prefix for graphite metrics, defaults to moe.pizza.timerboard")
 
   }

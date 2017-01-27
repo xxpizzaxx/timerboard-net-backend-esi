@@ -28,13 +28,9 @@ object ClientCacheTest extends App {
 
   val r = req.run(esi)
 
-
-  while(true) {
+  while (true) {
     println(r.unsafePerformSync)
     readLine()
   }
-
-
-
 
 }

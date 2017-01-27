@@ -16,8 +16,7 @@ object Middleware {
   import KleisliCache._
 
   val memoMiddleware = new HttpMiddleware {
-    override def apply(
-        v1: Service[Request, Response]): Service[Request, Response] =
+    override def apply(v1: Service[Request, Response]): Service[Request, Response] =
       v1.concurrentlyMemoize
   }
 
@@ -36,16 +35,16 @@ object Middleware {
   }
 
   def cacheMiddleware(methods: List[Method] = Method.registered.toList) = new HttpMiddleware {
-    override def apply(
-        v1: Service[Request, Response]): Service[Request, Response] = {
+    override def apply(v1: Service[Request, Response]): Service[Request, Response] = {
       val cached = v1.map { r =>
         val body = r.body.runLog.unsafePerformSync
         ((r, body), getCacheDuration(r))
       }.concurrentlyCache
       HttpService {
         case r if methods.contains(r.method) =>
-          cached(r).map{ case (resp, body) =>
-            resp.copy(body = Process.emitAll(body))
+          cached(r).map {
+            case (resp, body) =>
+              resp.copy(body = Process.emitAll(body))
           }
         case r =>
           v1(r)

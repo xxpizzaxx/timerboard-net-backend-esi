@@ -22,12 +22,12 @@ import Scalaz._
 import scalaz.concurrent.{Strategy, Task}
 import spray.caching.{Cache, LruCache}
 
-import scalaz.stream.{Exchange, Process, time}
+import scalaz.stream.{time, Exchange, Process}
 import scalaz.stream.async.topic
 import scala.concurrent.duration._
 import scalaz.stream.async.mutable.Topic
 import scala.concurrent.ExecutionContext.Implicits.global
-import scalaz.stream.{DefaultScheduler, Exchange, Process, wye}
+import scalaz.stream.{wye, DefaultScheduler, Exchange, Process}
 import org.http4s.util.threads.threadFactory
 import org.slf4j.LoggerFactory
 import scala.util.Try
@@ -39,11 +39,11 @@ class StreamingService(metrics: MetricRegistry) {
 
   val log = LoggerFactory.getLogger(getClass)
 
-  val metric_sov = metrics.meter("urlfetch-sov")
-  val metric_sys = metrics.meter("urlfetch-system")
-  val metric_ping = metrics.meter("ping")
+  val metric_sov     = metrics.meter("urlfetch-sov")
+  val metric_sys     = metrics.meter("urlfetch-system")
+  val metric_ping    = metrics.meter("ping")
   val metric_initial = metrics.meter("initial")
-  val metric_diff = metrics.meter("diff")
+  val metric_diff    = metrics.meter("diff")
 
   val client = PooledHttp1Client.apply()
 
@@ -55,24 +55,25 @@ class StreamingService(metrics: MetricRegistry) {
 
   val getSystemName = Kleisli[Task, Int, Option[String]] { (id: Int) =>
     metric_sys.mark()
-    EsiClient.universe.getUniverseSystemsSystemId(id)
+    EsiClient.universe
+      .getUniverseSystemsSystemId(id)
       .run(esi)
-      .map { _.toOption.flatMap{_.solar_system_name} }
+      .map { _.toOption.flatMap { _.solar_system_name } }
   }.concurrentlyMemoize
 
   case class AllianceInfo(id: Int, ticker: String, name: String)
 
   val getAllianceName = Kleisli[Task, Int, Option[AllianceInfo]] { (id: Int) =>
     metric_sys.mark()
-    EsiClient.alliance.getAlliancesAllianceId(id)
+    EsiClient.alliance
+      .getAlliancesAllianceId(id)
       .run(esi)
       .map { _.toOption.map(x => AllianceInfo(id, x.ticker, x.alliance_name)) }
   }.concurrentlyMemoize
 
-  case class SystemNameAndSovCampaign(
-      solar_system_name: Option[String],
-      event: eveapi.esi.model.Get_sovereignty_campaigns_200_ok,
-      alliance: Option[AllianceInfo])
+  case class SystemNameAndSovCampaign(solar_system_name: Option[String],
+                                      event: eveapi.esi.model.Get_sovereignty_campaigns_200_ok,
+                                      alliance: Option[AllianceInfo])
 
   val topic: Topic[List[SystemNameAndSovCampaign]] =
     scalaz.stream.async.topic[List[SystemNameAndSovCampaign]]({
@@ -87,13 +88,15 @@ class StreamingService(metrics: MetricRegistry) {
               .map {
                 _.map {
                   res =>
-                    val systems = res.map(_.solar_system_id).toSet
+                    val systems   = res.map(_.solar_system_id).toSet
                     val alliances = res.flatMap(_.defender_id)
-                    val allianceLookups = alliances.map{ id =>
+                    val allianceLookups = alliances.map { id =>
                       getAllianceName(id.toInt)
                     }
                     val systemLookups = systems.map { id =>
-                      getSystemName(id.toInt).map{x => (id, x)}
+                      getSystemName(id.toInt).map { x =>
+                        (id, x)
+                      }
                     }.toList
                     val systemResults =
                       Task.gatherUnordered(systemLookups).attemptRun.toList.flatten.toMap
@@ -113,7 +116,7 @@ class StreamingService(metrics: MetricRegistry) {
         .map(_.toOption.map(_.toOption).flatten)
         .flatMap {
           case Some(x) => Process.emit(x)
-          case None => Process.empty
+          case None    => Process.empty
         }
     })
 
@@ -122,10 +125,10 @@ class StreamingService(metrics: MetricRegistry) {
   topic.subscribe
     .map(x => lastResponse = x)
     .run
-    .runAsync(f =>
-      f.leftMap(t => log.error("failed to update the lastResponse cache", t))
-        .rightMap(_ =>
-          log.error("lastResponse cache updater exited with Unit")))
+    .runAsync(
+      f =>
+        f.leftMap(t => log.error("failed to update the lastResponse cache", t))
+          .rightMap(_ => log.error("lastResponse cache updater exited with Unit")))
 
   val encoder = EncodeJson.of[List[SystemNameAndSovCampaign]]
 
@@ -140,28 +143,31 @@ class StreamingService(metrics: MetricRegistry) {
           Ping()
         }
       val initial = Process.emitAll(Option(lastResponse).toList)
-      val src = wye(initial, topic.subscribe)(wye.mergeHaltR).zipWithPrevious.filter {
-        case (x, y) => !x.contains(y) //dedupe
-      }.flatMap { r =>
-        val mainResponse = r match {
-          // transform to JSON
-          case (None, current) =>
-            metric_initial.mark()
-            Some(s"""{"initial":${encoder(current).toString}}""") // first run!
-          case (Some(prev), current) => // we've had a change in the JSON
-            metric_diff.mark()
-            val pjson = OM.readTree(encoder(prev).toString)
-            val cjson = OM.readTree(encoder(current).toString)
-            val diffs = JsonDiff.asJson(pjson, cjson).toString
-            Some(s"""{"diff":${diffs}}""")
-          case _ =>
-            log.error("unknown result in stream")
-            None
+      val src = wye(initial, topic.subscribe)(wye.mergeHaltR).zipWithPrevious
+        .filter {
+          case (x, y) => !x.contains(y) //dedupe
         }
-        Process.emitAll(List(mainResponse).flatten)
-      }.map { body =>
-        Text(body)
-      }
+        .flatMap { r =>
+          val mainResponse = r match {
+            // transform to JSON
+            case (None, current) =>
+              metric_initial.mark()
+              Some(s"""{"initial":${encoder(current).toString}}""") // first run!
+            case (Some(prev), current) => // we've had a change in the JSON
+              metric_diff.mark()
+              val pjson = OM.readTree(encoder(prev).toString)
+              val cjson = OM.readTree(encoder(current).toString)
+              val diffs = JsonDiff.asJson(pjson, cjson).toString
+              Some(s"""{"diff":${diffs}}""")
+            case _ =>
+              log.error("unknown result in stream")
+              None
+          }
+          Process.emitAll(List(mainResponse).flatten)
+        }
+        .map { body =>
+          Text(body)
+        }
       WS(Exchange(wye(pings, src)(wye.mergeHaltR), Process.halt))
   }
 

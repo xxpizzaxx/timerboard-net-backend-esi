@@ -57,7 +57,7 @@ class StreamingService(metrics: MetricRegistry) {
     EsiClient.universe
       .getUniverseSystemsSystemId(id)
       .run(esi)
-      .map { _.toOption.flatMap { _.solar_system_name } }
+      .map { _.toOption.map { _.name } }
   }.concurrentlyMemoize
 
   case class AllianceInfo(id: Int, ticker: String, name: String)

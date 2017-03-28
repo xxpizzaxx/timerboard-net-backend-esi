@@ -53,21 +53,31 @@ class StreamingService(metrics: MetricRegistry) {
   import KleisliMemo._
 
   val getSystemName = Kleisli[Task, Int, Option[String]] { (id: Int) =>
-    metric_sys.mark()
-    EsiClient.universe
-      .getUniverseSystemsSystemId(id)
-      .run(esi)
-      .map { _.toOption.map { _.name } }
+    Task {
+      metric_sys.mark()
+      EsiClient.universe
+        .getUniverseSystemsSystemId(id)
+        .run(esi)
+        .map {
+          _.toOption.map {
+            _.name
+          }
+        }
+    }.flatMap(identity)
   }.concurrentlyMemoize
 
   case class AllianceInfo(id: Int, ticker: String, name: String)
 
   val getAllianceName = Kleisli[Task, Int, Option[AllianceInfo]] { (id: Int) =>
-    metric_sys.mark()
-    EsiClient.alliance
-      .getAlliancesAllianceId(id)
-      .run(esi)
-      .map { _.toOption.map(x => AllianceInfo(id, x.ticker, x.alliance_name)) }
+    Task {
+      metric_sys.mark()
+      EsiClient.alliance
+        .getAlliancesAllianceId(id)
+        .run(esi)
+        .map {
+          _.toOption.map(x => AllianceInfo(id, x.ticker, x.alliance_name))
+        }
+    }.flatMap(identity)
   }.concurrentlyMemoize
 
   case class SystemNameAndSovCampaign(solar_system_name: Option[String],

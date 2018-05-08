@@ -159,7 +159,7 @@ class StreamingService(metrics: MetricRegistry, scheduler: Scheduler, ec: Execut
           val mainResponse = r match {
             // transform to JSON
             case (None, current) =>
-              Some(s"""{"initial":${current.asJson.toString}""") // first run!
+              Some(s"""{"initial":${current.asJson.noSpaces}""") // first run!
             case (Some(prev), current) => // we've had a change in the JSON
               val pjson = OM.readTree(prev.asJson.toString)
               val cjson = OM.readTree(current.asJson.toString)

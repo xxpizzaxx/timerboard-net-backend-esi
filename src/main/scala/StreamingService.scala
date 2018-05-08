@@ -135,7 +135,6 @@ class StreamingService(metrics: MetricRegistry, scheduler: Scheduler, ec: Execut
 
   (IO.shift(updater) *> topic.subscribe(1024)
     .map{x => lastResponse = x; x}
-    .map{x => println(x); x}
     .compile
     .drain)
     .unsafeRunAsync(_ => ())

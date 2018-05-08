@@ -1,9 +1,8 @@
 import net.jodah.expiringmap.{ExpirationPolicy, ExpiringMap}
 
 import scala.collection.concurrent.TrieMap
-import scalaz.concurrent.Task
-import scalaz._
-import Scalaz._
+import cats.effect._
+import cats._, cats.implicits._, cats.syntax._, cats.data._
 
 object KleisliMemo {
 
@@ -31,7 +30,7 @@ object KleisliMemo {
             m.put(k, v)
             mm.point(v)
           }
-          (f >=> saver).run(k)
+          (f andThen saver).run(k)
         }
     })
   }
@@ -59,9 +58,8 @@ object KleisliCache {
       override def apply(z: Kleisli[M, K, ResultWithExpiry[V]]): Kleisli[M, K, V] = f(z)
     }
 
-  def concurrentKleisliCache[C[_, _], M[_], K, V]()(implicit cf: CacheFactory[C],
-                                                    mm: Monad[M]): KleisliCache[M, K, V] = {
-    val m = cf.create[K, V]()
+  def concurrentKleisliCache[M[_], K, V]()(implicit mm: Monad[M]): KleisliCache[M, K, V] = {
+    val m = Cache.create[K, V]()
     kcache[M, K, V](f =>
       Kleisli { (k: K) =>
         m.get(k)
@@ -74,14 +72,14 @@ object KleisliCache {
               }
               mm.point(v)
             }
-            (f >=> saver).run(k)
+            (f andThen saver).run(k)
           }
     })
   }
 
   implicit class CacheableKleiski[M[_], K, V](k: Kleisli[M, K, ResultWithExpiry[V]]) {
     def concurrentlyCacheWithExpiringMap(implicit mm: Monad[M]) =
-      concurrentKleisliCache[ExpiringMap, M, K, V]().apply(k)
+      concurrentKleisliCache[M, K, V]().apply(k)
   }
 
 }

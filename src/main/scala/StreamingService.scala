@@ -1,14 +1,11 @@
 import java.util.concurrent.{Executors, ScheduledExecutorService}
 
-import org.http4s.rho.RhoService
 import org.http4s._
 import org.http4s.client.blaze.PooledHttp1Client
 import eveapi.esi.client._
 import EsiClient._
-import _root_.argonaut._
-import Argonaut._
-import ArgonautShapeless._
-import eveapi.esi.api.ArgonautCodecs._
+import eveapi.esi.api.CirceCodecs._
+import io.circe.java8.time._
 import com.codahale.metrics.MetricRegistry
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.flipkart.zjsonpatch.JsonDiff
@@ -16,45 +13,40 @@ import org.http4s.circe._
 import io.circe._
 import io.circe.generic.auto._
 import io.circe.syntax._
+import cats._
+import cats.syntax._
+import cats.implicits._
+import cats.data._
+import cats.effect._
+import fs2._
+import fs2.async.mutable.Topic
+import org.http4s.client.DisposableResponse
+import org.http4s.server.websocket.WebSocketBuilder
 
-import scalaz._
-import Scalaz._
-import scalaz.concurrent.{Strategy, Task}
-
-import scalaz.stream.{time, Exchange, Process}
-import scalaz.stream.async.topic
 import scala.concurrent.duration._
-import scalaz.stream.async.mutable.Topic
-import scala.concurrent.ExecutionContext.Implicits.global
-import scalaz.stream.{wye, DefaultScheduler, Exchange, Process}
 import org.http4s.util.threads.threadFactory
 import org.slf4j.LoggerFactory
+
+import scala.concurrent.ExecutionContext
 import scala.util.Try
 
-class StreamingService(metrics: MetricRegistry) {
-  import org.http4s.dsl._
+class StreamingService(metrics: MetricRegistry, scheduler: Scheduler, ec: ExecutionContext) {
+  import org.http4s.dsl.io._
   import org.http4s.websocket.WebsocketBits._
   import org.http4s.server.websocket.WS
 
   val log = LoggerFactory.getLogger(getClass)
+  log.info("starting streaming service")
 
-  val metric_sov     = metrics.meter("urlfetch-sov")
-  val metric_sys     = metrics.meter("urlfetch-system")
-  val metric_ping    = metrics.meter("ping")
-  val metric_initial = metrics.meter("initial")
-  val metric_diff    = metrics.meter("diff")
 
-  val client = PooledHttp1Client.apply()
+  val client = PooledHttp1Client.apply[IO]()
 
-  val esi = new MetricsEsiClient("", metrics, "timerboard-net-backend-esi", client.toHttpService)
-
-  // TODO replace all the disjunction flattening with validations
+  val esi = new EsiClient[IO]("timerboard-net-esi-crawler", client.open)
 
   import KleisliMemo._
 
-  val getSystemName = Kleisli[Task, Int, Option[String]] { (id: Int) =>
-    Task {
-      metric_sys.mark()
+  val getSystemName = Kleisli[IO, Int, Option[String]] { (id: Int) =>
+    IO {
       EsiClient.universe
         .getUniverseSystemsSystemId(id)
         .run(esi)
@@ -63,96 +55,103 @@ class StreamingService(metrics: MetricRegistry) {
             _.name
           }
         }
-    }.flatMap(identity)
+    }.flatten
   }.concurrentlyMemoize
 
   case class AllianceInfo(id: Int, ticker: String, name: String)
 
-  val getAllianceName = Kleisli[Task, Int, Option[AllianceInfo]] { (id: Int) =>
-    Task {
-      metric_sys.mark()
+  val getAllianceName = Kleisli[IO, Int, Option[AllianceInfo]] { (id: Int) =>
+    IO {
       EsiClient.alliance
         .getAlliancesAllianceId(id)
         .run(esi)
         .map {
-          _.toOption.map(x => AllianceInfo(id, x.ticker, x.alliance_name))
+          _.toOption.map(x => AllianceInfo(id, x.ticker, x.name))
         }
-    }.flatMap(identity)
+    }.flatten
   }.concurrentlyMemoize
 
   case class SystemNameAndSovCampaign(solar_system_name: Option[String],
                                       event: eveapi.esi.model.Get_sovereignty_campaigns_200_ok,
                                       alliance: Option[AllianceInfo])
 
-  val topic: Topic[List[SystemNameAndSovCampaign]] =
-    scalaz.stream.async.topic[List[SystemNameAndSovCampaign]]({
-      time
-        .awakeEvery(5 seconds)(Strategy.DefaultStrategy, DefaultScheduler)
-        .map {
-          _ =>
-            metric_sov.mark()
-            EsiClient.sovereignty
-              .getSovereigntyCampaigns()
-              .run(esi)
-              .map {
-                _.map {
-                  res =>
-                    val systems   = res.map(_.solar_system_id).toSet
-                    val alliances = res.flatMap(_.defender_id)
-                    val allianceLookups = alliances.map { id =>
-                      getAllianceName(id.toInt)
+  val topicec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
+  val topic: Topic[IO, List[SystemNameAndSovCampaign]] = {
+    implicit val e = topicec
+    Topic.apply[IO, List[SystemNameAndSovCampaign]](List.empty).unsafeRunSync()
+  }
+
+  val crawlerec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
+  val crawler: Stream[IO, List[SystemNameAndSovCampaign]] = {
+    implicit val e = crawlerec
+    scheduler
+      .awakeEvery[IO](5 seconds)
+      .flatMap {
+        _ =>
+          log.info("crawling sov")
+          Stream.attemptEval(EsiClient.sovereignty
+            .getSovereigntyCampaigns()
+            .run(esi)
+            .map {
+              _.map {
+                res =>
+                  val systems   = res.map(_.solar_system_id).toSet
+                  val alliances = res.flatMap(_.defender_id)
+                  val allianceLookups = alliances.map { id =>
+                    getAllianceName(id.toInt)
+                  }
+                  val systemLookups = systems.map { id =>
+                    getSystemName(id.toInt).map { x =>
+                      (id, x)
                     }
-                    val systemLookups = systems.map { id =>
-                      getSystemName(id.toInt).map { x =>
-                        (id, x)
-                      }
-                    }.toList
-                    val systemResults =
-                      Task.gatherUnordered(systemLookups).attemptRun.toList.flatten.toMap
-                    val allianceResults =
-                      Task.gatherUnordered(allianceLookups).attemptRun.toOption.toList.flatten.flatten
-                    res.map { event =>
-                      SystemNameAndSovCampaign(
-                        systemResults.get(event.solar_system_id).flatten,
-                        event,
-                        allianceResults.find(a => event.defender_id.contains(a.id.toInt))
-                      )
-                    }
-                }
+                  }.toList
+                  for {
+                    systemResults <- systemLookups.map(IO.shift(ec) *> _).parSequence
+                    systemLookup = systemResults.toMap
+                    allianceResults <- allianceLookups.map(IO.shift(ec) *> _).parSequence
+                    allianceLookup = allianceResults.flatten
+                  } yield { res.map { event =>
+                    SystemNameAndSovCampaign(
+                      systemLookup.get(event.solar_system_id).flatten,
+                      event,
+                      allianceLookup.find(a => event.defender_id.contains(a.id.toInt))
+                    )
+                  } }
               }
-              .attemptRun
-        }
-        .map(_.toOption.map(_.toOption).flatten)
-        .flatMap {
-          case Some(x) => Process.emit(x)
-          case None    => Process.empty
-        }
-    })
+            })
+      }
+      .map(_.toOption.map(_.toOption).flatten)
+      .flatMap {
+        case Some(x) => Stream.eval(x).covary[IO]
+        case None    => Stream.empty.covary[IO]
+      }
+  }
+
+  val runcrawler = (IO.shift(ec) *> crawler.to(topic.publish).compile.drain).unsafeRunAsync(_ => ())
 
   @volatile var lastResponse: List[SystemNameAndSovCampaign] = null
 
-  topic.subscribe
-    .map(x => lastResponse = x)
-    .run
-    .runAsync(
-      f =>
-        f.leftMap(t => log.error("failed to update the lastResponse cache", t))
-          .rightMap(_ => log.error("lastResponse cache updater exited with Unit")))
+  val updater = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 
-  val encoder = EncodeJson.of[List[SystemNameAndSovCampaign]]
+  (IO.shift(updater) *> topic.subscribe(1024)
+    .map{x => lastResponse = x; x}
+    .map{x => println(x); x}
+    .compile
+    .drain)
+    .unsafeRunAsync(_ => ())
 
   val OM = new ObjectMapper()
 
-  val service = HttpService {
+  val service = HttpService[IO] {
     case r @ GET -> Root / "stream" =>
-      val pings = time
-        .awakeEvery(10 seconds)(Strategy.DefaultStrategy, DefaultScheduler)
+      implicit val e = ec
+      val pings = scheduler
+        .awakeEvery[IO](10 seconds)
         .map { _ =>
-          metric_ping.mark()
           Ping()
         }
-      val initial = Process.emitAll(Option(lastResponse).toList)
-      val src = wye(initial, topic.subscribe)(wye.mergeHaltR).zipWithPrevious
+      val initial = Stream.emits(Option(lastResponse).toList)
+      val src = initial.mergeHaltR(topic.subscribe(1024)).zipWithPrevious
         .filter {
           case (x, y) => !x.contains(y) //dedupe
         }
@@ -160,24 +159,22 @@ class StreamingService(metrics: MetricRegistry) {
           val mainResponse = r match {
             // transform to JSON
             case (None, current) =>
-              metric_initial.mark()
-              Some(s"""{"initial":${encoder(current).toString}}""") // first run!
+              Some(s"""{"initial":${current.asJson.toString}""") // first run!
             case (Some(prev), current) => // we've had a change in the JSON
-              metric_diff.mark()
-              val pjson = OM.readTree(encoder(prev).toString)
-              val cjson = OM.readTree(encoder(current).toString)
+              val pjson = OM.readTree(prev.asJson.toString)
+              val cjson = OM.readTree(current.asJson.toString)
               val diffs = JsonDiff.asJson(pjson, cjson).toString
               Some(s"""{"diff":${diffs}}""")
             case _ =>
               log.error("unknown result in stream")
               None
           }
-          Process.emitAll(List(mainResponse).flatten)
+          Stream.emits(List(mainResponse).flatten)
         }
         .map { body =>
           Text(body)
         }
-      WS(Exchange(wye(pings, src)(wye.mergeHaltR), Process.halt))
+      WebSocketBuilder[IO].build(pings.mergeHaltR(src), Sink { w: WebSocketFrame => IO {()} })
   }
 
 }

@@ -1,14 +1,18 @@
 import java.util.concurrent.TimeUnit
 
+import cats.effect.IO
 import com.codahale.metrics.graphite.{Graphite, GraphiteReporter}
 import com.codahale.metrics.{ConsoleReporter, MetricRegistry}
-import org.http4s.Service
-import org.http4s.rho.swagger.SwaggerSupport
 import org.http4s.server.blaze.BlazeBuilder
-import org.http4s.server.staticcontent.MemoryCache
 import scopt.OptionParser
+import cats._
+import cats.implicits._
+import cats.data._
+import cats.syntax._
+import cats.effect._
+import fs2._
 
-object Main {
+object Main extends StreamApp[IO] {
 
   case class Config(host: String = "localhost",
                     port: Int = 8090,
@@ -52,9 +56,11 @@ object Main {
 
   }
 
-  def main(args: Array[String]): Unit = {
+  override def stream(args: List[String], requestShutdown: IO[Unit]): fs2.Stream[IO, StreamApp.ExitCode] = {
+    implicit val ec = scala.concurrent.ExecutionContext.global
     parser.parse(args, Config()) match {
       case Some(config) =>
+        println("starting")
         val metrics = new MetricRegistry
         if (config.consoleMetrics) {
           ConsoleReporter
@@ -74,16 +80,17 @@ object Main {
             .start(1, TimeUnit.SECONDS)
 
         }
-        val stream = new StreamingService(metrics)
-        BlazeBuilder
-          .mountService(stream.service, "/")
-          .bindHttp(config.port, config.host)
-          .start
-          .run
-          .awaitShutdown()
+        for {
+          sched <- Scheduler.apply[IO](8)
+          svc = new StreamingService(metrics, sched, scala.concurrent.ExecutionContext.global)
+          _ = println("streaming set up, mounting as http server")
+          exit <- BlazeBuilder[IO]
+            .mountService(svc.service, "/")
+            .bindHttp(config.port, config.host)
+            .serve
+        } yield exit
       case None =>
-        ()
+        Stream.emit(StreamApp.ExitCode.Error)
     }
   }
-
 }

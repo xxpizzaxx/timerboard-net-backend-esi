@@ -39,9 +39,9 @@ class StreamingService(metrics: MetricRegistry, scheduler: Scheduler, ec: Execut
   log.info("starting streaming service")
 
 
-  val client = PooledHttp1Client.apply[IO]()
+  val client = PooledHttp1Client.apply[IO](maxWaitQueueLimit = 2048)
 
-  val esi = new EsiClient[IO]("timerboard-net-esi-crawler", client.open)
+  val esi = new EsiClient[IO](useragent = "timerboard-net-esi-crawler", baseUri = Uri.unsafeFromString("https://esi.evetech.net"), client = client.open)
 
   import KleisliMemo._
 

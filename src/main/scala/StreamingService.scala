@@ -122,8 +122,14 @@ class StreamingService(metrics: MetricRegistry, scheduler: Scheduler, ec: Execut
       }
       .map(_.toOption.map(_.toOption).flatten)
       .flatMap {
-        case Some(x) => Stream.eval(x).covary[IO]
+        case Some(x) => Stream.attemptEval(x).covary[IO]
         case None    => Stream.empty.covary[IO]
+      }.flatMap {
+        case Left(t) =>
+          log.warn("Error when attempting crawl", t)
+          Stream.empty.covary[IO]
+        case Right(r) =>
+          Stream.emit(r).covary[IO]
       }
   }
 
